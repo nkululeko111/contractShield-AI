@@ -12,10 +12,20 @@ import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@e
 
 const { width } = Dimensions.get('window');
 
-const AnalysisCard = ({ icon, title, description, severity, details }: any) => {
+type Severity = 'high' | 'medium' | 'low' | 'info';
+
+interface AnalysisCardProps {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  severity: Severity;
+  details: string;
+}
+
+const AnalysisCard = ({ icon, title, description, severity, details }: AnalysisCardProps) => {
   const [expanded, setExpanded] = useState(false);
   
-  const severityColors = {
+  const severityColors: Record<Severity, string> = {
     high: '#DC2626',
     medium: '#F59E0B',
     low: '#059669',
@@ -95,7 +105,7 @@ export default function AnalysisScreen() {
     return null;
   }
 
-  const analysisData = [
+  const analysisData: AnalysisCardProps[] = [
     {
       icon: <AlertTriangle size={20} color="#DC2626" strokeWidth={2} />,
       title: "Illegal Termination Clause",
