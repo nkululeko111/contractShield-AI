@@ -6,72 +6,52 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
+  Alert,
+  Modal,
+  TextInput,
 } from 'react-native';
-import { User, Settings, CreditCard, Bell, Globe, Shield, LogOut, Crown, FileText, ChartBar as BarChart3 } from 'lucide-react-native';
+import {
+  User,
+  Settings,
+  CreditCard,
+  Bell,
+  Globe,
+  Shield,
+  LogOut,
+  Crown,
+  FileText,
+  ChartBar as BarChart3,
+} from 'lucide-react-native';
 import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 
-const ProfileOption = ({ icon, title, subtitle, onPress, showArrow = true }: any) => (
-  <TouchableOpacity style={styles.profileOption} onPress={onPress}>
-    <View style={styles.optionIconContainer}>
-      {icon}
-    </View>
-    <View style={styles.optionContent}>
-      <Text style={styles.optionTitle}>{title}</Text>
-      {subtitle && <Text style={styles.optionSubtitle}>{subtitle}</Text>}
-    </View>
-    {showArrow && (
-      <Text style={styles.optionArrow}>›</Text>
-    )}
-  </TouchableOpacity>
-);
+type ProfileOptionProps = {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+};
 
-const SubscriptionCard = () => (
-  <View style={styles.subscriptionCard}>
-    <View style={styles.subscriptionHeader}>
-      <Crown size={20} color="#F59E0B" strokeWidth={2} />
-      <Text style={styles.subscriptionTitle}>Pro Plan</Text>
-    </View>
-    <Text style={styles.subscriptionDescription}>
-      Unlimited contract analysis with advanced features
-    </Text>
-    <View style={styles.subscriptionFeatures}>
-      <Text style={styles.subscriptionFeature}>• Unlimited uploads</Text>
-      <Text style={styles.subscriptionFeature}>• Advanced loophole detection</Text>
-      <Text style={styles.subscriptionFeature}>• Negotiation templates</Text>
-      <Text style={styles.subscriptionFeature}>• Priority support</Text>
-    </View>
-    <TouchableOpacity style={styles.upgradeButton}>
-      <Text style={styles.upgradeButtonText}>Upgrade to Pro - R199/month</Text>
+function ProfileOption({ icon, title, subtitle, onPress }: ProfileOptionProps) {
+  return (
+    <TouchableOpacity style={styles.profileOption} onPress={onPress}>
+      <View style={styles.optionIconContainer}>{icon}</View>
+      <View style={styles.optionContent}>
+        <Text style={styles.optionTitle}>{title}</Text>
+        <Text style={styles.optionSubtitle}>{subtitle}</Text>
+      </View>
     </TouchableOpacity>
-  </View>
-);
-
-const UsageStats = () => (
-  <View style={styles.usageCard}>
-    <Text style={styles.usageTitle}>This Month's Usage</Text>
-    <View style={styles.usageStats}>
-      <View style={styles.usageStat}>
-        <FileText size={16} color="#1E40AF" strokeWidth={2} />
-        <Text style={styles.usageNumber}>12</Text>
-        <Text style={styles.usageLabel}>Contracts</Text>
-      </View>
-      <View style={styles.usageStat}>
-        <Shield size={16} color="#DC2626" strokeWidth={2} />
-        <Text style={styles.usageNumber}>8</Text>
-        <Text style={styles.usageLabel}>Red Flags</Text>
-      </View>
-      <View style={styles.usageStat}>
-        <BarChart3 size={16} color="#059669" strokeWidth={2} />
-        <Text style={styles.usageNumber}>R15K</Text>
-        <Text style={styles.usageLabel}>Saved</Text>
-      </View>
-    </View>
-  </View>
-);
+  );
+}
 
 export default function ProfileScreen() {
+  // State toggles
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+
+  // Modal states
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalContent, setModalContent] = useState('');
+  const [textInput, setTextInput] = useState('');
 
   const [fontsLoaded] = useFonts({
     'Inter-Regular': Inter_400Regular,
@@ -82,6 +62,21 @@ export default function ProfileScreen() {
   if (!fontsLoaded) {
     return null;
   }
+
+  const handleSignOut = () => {
+    Alert.alert('Signed Out', 'You have been signed out.');
+  };
+
+  const openModal = (content: string) => {
+    setModalContent(content);
+    setTextInput('');
+    setModalVisible(true);
+  };
+
+  const handleModalConfirm = () => {
+    // Handle form submissions or info updates here if needed
+    setModalVisible(false);
+  };
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -98,29 +93,71 @@ export default function ProfileScreen() {
       </View>
 
       {/* Usage Stats */}
-      <UsageStats />
+      <View style={styles.usageCard}>
+        <Text style={styles.usageTitle}>This Month's Usage</Text>
+        <View style={styles.usageStats}>
+          <View style={styles.usageStat}>
+            <FileText size={16} color="#1E40AF" strokeWidth={2} />
+            <Text style={styles.usageNumber}>12</Text>
+            <Text style={styles.usageLabel}>Contracts</Text>
+          </View>
+          <View style={styles.usageStat}>
+            <Shield size={16} color="#DC2626" strokeWidth={2} />
+            <Text style={styles.usageNumber}>8</Text>
+            <Text style={styles.usageLabel}>Red Flags</Text>
+          </View>
+          <View style={styles.usageStat}>
+            <BarChart3 size={16} color="#059669" strokeWidth={2} />
+            <Text style={styles.usageNumber}>R15K</Text>
+            <Text style={styles.usageLabel}>Saved</Text>
+          </View>
+        </View>
+      </View>
 
       {/* Subscription Card */}
-      <SubscriptionCard />
+      <View style={styles.subscriptionCard}>
+        <View style={styles.subscriptionHeader}>
+          <Crown size={20} color="#F59E0B" strokeWidth={2} />
+          <Text style={styles.subscriptionTitle}>Pro Plan</Text>
+        </View>
+        <Text style={styles.subscriptionDescription}>
+          Unlimited contract analysis with advanced features
+        </Text>
+        <View style={styles.subscriptionFeatures}>
+          <Text style={styles.subscriptionFeature}>• Unlimited uploads</Text>
+          <Text style={styles.subscriptionFeature}>• Advanced loophole detection</Text>
+          <Text style={styles.subscriptionFeature}>• Negotiation templates</Text>
+          <Text style={styles.subscriptionFeature}>• Priority support</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.upgradeButton}
+          onPress={() => Alert.alert('Upgrade', 'Navigate to upgrade screen')}
+        >
+          <Text style={styles.upgradeButtonText}>Upgrade to Pro - R19/month</Text>
+        </TouchableOpacity>
+      </View>
 
-      {/* Profile Options */}
+      {/* Account Settings */}
       <View style={styles.optionsSection}>
         <Text style={styles.sectionTitle}>Account Settings</Text>
-        
+
+        {/* Personal Information */}
         <ProfileOption
           icon={<User size={20} color="#6B7280" strokeWidth={2} />}
           title="Personal Information"
           subtitle="Update your profile details"
-          onPress={() => {}}
+          onPress={() => openModal('Personal Information')}
         />
-        
+
+        {/* Billing & Subscription */}
         <ProfileOption
           icon={<CreditCard size={20} color="#6B7280" strokeWidth={2} />}
           title="Billing & Subscription"
           subtitle="Manage your plan and payment methods"
-          onPress={() => {}}
+          onPress={() => openModal('Billing & Subscription')}
         />
-        
+
+        {/* Push Notifications */}
         <View style={styles.profileOption}>
           <View style={styles.optionIconContainer}>
             <Bell size={20} color="#6B7280" strokeWidth={2} />
@@ -137,6 +174,7 @@ export default function ProfileScreen() {
           />
         </View>
 
+        {/* Biometric Security */}
         <View style={styles.profileOption}>
           <View style={styles.optionIconContainer}>
             <Shield size={20} color="#6B7280" strokeWidth={2} />
@@ -152,44 +190,48 @@ export default function ProfileScreen() {
             thumbColor={biometricsEnabled ? '#1E40AF' : '#F3F4F6'}
           />
         </View>
-        
+
+        {/* Language Preferences */}
         <ProfileOption
           icon={<Globe size={20} color="#6B7280" strokeWidth={2} />}
           title="Language Preferences"
           subtitle="English, isiZulu, Afrikaans, isiXhosa"
-          onPress={() => {}}
+          onPress={() => openModal('Language Preferences')}
         />
       </View>
 
       {/* App Settings */}
       <View style={styles.optionsSection}>
         <Text style={styles.sectionTitle}>App Settings</Text>
-        
+
+        {/* General Settings */}
         <ProfileOption
           icon={<Settings size={20} color="#6B7280" strokeWidth={2} />}
           title="General Settings"
           subtitle="App preferences and defaults"
-          onPress={() => {}}
+          onPress={() => openModal('General Settings')}
         />
-        
+
+        {/* Privacy Policy */}
         <ProfileOption
           icon={<FileText size={20} color="#6B7280" strokeWidth={2} />}
           title="Privacy Policy"
           subtitle="How we protect your data"
-          onPress={() => {}}
+          onPress={() => openModal('Privacy Policy')}
         />
-        
+
+        {/* Terms of Service */}
         <ProfileOption
           icon={<Shield size={20} color="#6B7280" strokeWidth={2} />}
           title="Terms of Service"
           subtitle="Usage terms and conditions"
-          onPress={() => {}}
+          onPress={() => openModal('Terms of Service')}
         />
       </View>
 
-      {/* Logout */}
+      {/* Sign Out */}
       <View style={styles.logoutSection}>
-        <TouchableOpacity style={styles.logoutButton}>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleSignOut}>
           <LogOut size={16} color="#DC2626" strokeWidth={2} />
           <Text style={styles.logoutText}>Sign Out</Text>
         </TouchableOpacity>
@@ -200,6 +242,36 @@ export default function ProfileScreen() {
         <Text style={styles.versionText}>ContractShield AI v1.0.0</Text>
         <Text style={styles.versionSubtext}>Made in South Africa 🇿🇦</Text>
       </View>
+
+      {/* Modal for info update */}
+      <Modal transparent={true} visible={modalVisible} animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>{modalContent}</Text>
+            <TextInput
+              style={styles.textInput}
+              multiline
+              placeholder={`Enter details for ${modalContent}`}
+              value={textInput}
+              onChangeText={setTextInput}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={() => setModalVisible(false)}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={handleModalConfirm}
+              >
+                <Text style={styles.modalButtonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -420,5 +492,48 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter-Regular',
     color: '#9CA3AF',
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: '90%',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-Bold',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  textInput: {
+    height: 150,
+    borderColor: '#ccc',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    textAlignVertical: 'top',
+    marginBottom: 12,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modalButton: {
+    padding: 12,
+    backgroundColor: '#1E40AF',
+    borderRadius: 8,
+    minWidth: '45%',
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontFamily: 'Inter-SemiBold',
   },
 });

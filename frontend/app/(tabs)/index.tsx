@@ -10,14 +10,13 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Shield, FileText, TriangleAlert as AlertTriangle, Users, Zap, Globe } from 'lucide-react-native';
 import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
+import { useNavigation } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
 
 const FeatureCard = ({ icon, title, description, color }: any) => (
   <TouchableOpacity style={[styles.featureCard, { borderLeftColor: color }]}>
-    <View style={styles.featureIconContainer}>
-      {icon}
-    </View>
+    <View style={styles.featureIconContainer}>{icon}</View>
     <View style={styles.featureContent}>
       <Text style={styles.featureTitle}>{title}</Text>
       <Text style={styles.featureDescription}>{description}</Text>
@@ -38,6 +37,8 @@ export default function HomeScreen() {
     'Inter-SemiBold': Inter_600SemiBold,
     'Inter-Bold': Inter_700Bold,
   });
+  
+  const navigation = useNavigation<any>();
 
   if (!fontsLoaded) {
     return null;
@@ -55,14 +56,16 @@ export default function HomeScreen() {
             <Shield size={32} color="#FFFFFF" strokeWidth={2} />
           </View>
           <Text style={styles.heroTitle}>ContractShield AI</Text>
-          <Text style={styles.heroSubtitle}>
-            Democratizing Legal Power
-          </Text>
+          <Text style={styles.heroSubtitle}>Democratizing Legal Power</Text>
           <Text style={styles.heroDescription}>
             Understand, defend, and negotiate any contract without expensive lawyers
           </Text>
           
-          <TouchableOpacity style={styles.ctaButton}>
+          {/* Link to Upload Page */}
+          <TouchableOpacity
+            style={styles.ctaButton}
+            onPress={() => navigation.navigate('upload')}
+          >
             <Text style={styles.ctaButtonText}>Analyze Your First Contract</Text>
           </TouchableOpacity>
         </View>
@@ -86,7 +89,7 @@ export default function HomeScreen() {
         <FeatureCard
           icon={<FileText size={24} color="#1E40AF" strokeWidth={2} />}
           title="Explain Like I'm 15"
-          description="Complex contracts simplified into plain English, isiZulu, Afrikaans, or Xhosa"
+          description="Complex contracts simplified into plain English. Understand every clause"
           color="#1E40AF"
         />
         
@@ -150,8 +153,11 @@ export default function HomeScreen() {
         <Text style={styles.ctaSubtitle}>
           Join thousands of South Africans taking control of their contracts
         </Text>
-        <TouchableOpacity style={styles.primaryButton}>
-          <Text style={styles.primaryButtonText}>Start Free Trial</Text>
+        <TouchableOpacity
+          style={styles.primaryButton}
+          onPress={() => navigation.navigate('upload')}
+        >
+          <Text style={styles.primaryButtonText}>Start  Now</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
