@@ -9,6 +9,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import { TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Zap, MessageSquare, Globe, Clock, Upload, FileText } from 'lucide-react-native';
 import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 
@@ -24,10 +25,60 @@ interface AnalysisItem {
   details: string;
 }
 
+interface ContractDetails {
+  startDate?: string;
+  endDate?: string;
+  compensation?: string;
+  benefits?: string[];
+  terminationClause?: string;
+  keyLoopholes?: string[];
+}
+
+interface CategoryItem {
+  icon: string;
+  title: string;
+  description: string;
+  assessment: string;
+  severity: Severity;
+}
+
+interface RedFlag {
+  icon: string;
+  title: string;
+  severity: Severity;
+  description: string;
+  clause?: string;
+  legalImplication: string;
+  riskLevel?: string;
+}
+
+interface LoopholeItem {
+  icon: string;
+  title: string;
+  severity: Severity;
+  issues: string[];
+  exposure: string;
+}
+
+interface AdviceItem {
+  icon: string;
+  title: string;
+  current: string;
+  suggested: string;
+  reasoning: string;
+  priority?: string;
+}
+
 interface AnalysisData {
   score: number;
-  overview: string;
-  analysis: AnalysisItem[];
+  overview?: string;
+  analysis?: AnalysisItem[];
+  contractDetails?: ContractDetails;
+  aiSummary?: string;
+  overviewCategories?: Record<string, CategoryItem>;
+  redFlags?: RedFlag[];
+  loopholesBreakdown?: Record<string, LoopholeItem>;
+  negotiationAdvice?: Record<string, AdviceItem>;
 }
 
 interface AnalysisCardProps {
@@ -38,7 +89,7 @@ interface AnalysisCardProps {
   details: string;
 }
 
-const AnalysisCard = ({ icon, title, description, severity, details }: AnalysisCardProps) => {
+const AnalysisCard = ({ icon, title, description, severity, details, children }: AnalysisCardProps & { children?: React.ReactNode }) => {
   const [expanded, setExpanded] = useState(false);
   
   const severityColors: Record<Severity, string> = {
@@ -65,7 +116,50 @@ const AnalysisCard = ({ icon, title, description, severity, details }: AnalysisC
       
       {expanded && (
         <View style={styles.cardDetails}>
-          <Text style={styles.detailsText}>{details}</Text>
+          {children ? children : <Text style={styles.detailsText}>{details}</Text>}
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+};
+
+// (removed alias — a dedicated Card component exists below)
+
+interface CardProps {
+  icon: React.ReactNode;
+  title: string;
+  severity?: Severity;
+  children: React.ReactNode;
+}
+
+const Card = ({ icon, title, severity = 'info', children }: CardProps) => {
+  const [expanded, setExpanded] = useState(false);
+  
+  const severityColors: Record<Severity, string> = {
+    high: '#DC2626',
+    medium: '#F59E0B',
+    low: '#059669',
+    info: '#1E40AF',
+  };
+
+  return (
+    <TouchableOpacity 
+      style={[styles.analysisCard, { borderLeftColor: severityColors[severity] }]}
+      onPress={() => setExpanded(!expanded)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.cardHeader}>
+        <View style={[styles.cardIconContainer, { backgroundColor: severityColors[severity] + '20' }]}>
+          {icon}
+        </View>
+        <View style={styles.cardContent}>
+          <Text style={styles.cardTitle}>{title}</Text>
+        </View>
+      </View>
+      
+      {expanded && (
+        <View style={styles.cardDetails}>
+          {children}
         </View>
       )}
     </TouchableOpacity>
@@ -118,16 +212,26 @@ const normalizeAnalysisData = (data: any): AnalysisData => {
 
   return {
     score: typeof data.score === 'number' ? data.score : DEFAULT_ANALYSIS_DATA.score,
-    overview: data.overview || DEFAULT_ANALYSIS_DATA.overview,
-    analysis: Array.isArray(data.analysis) ? data.analysis : DEFAULT_ANALYSIS_DATA.analysis
+    overview: data.overview || data.aiSummary || DEFAULT_ANALYSIS_DATA.overview,
+    analysis: Array.isArray(data.analysis) ? data.analysis : DEFAULT_ANALYSIS_DATA.analysis,
+    contractDetails: data.contractDetails || undefined,
+    aiSummary: data.aiSummary || data.overview || undefined,
+    overviewCategories: data.overviewCategories || undefined,
+    redFlags: Array.isArray(data.redFlags) ? data.redFlags : undefined,
+    loopholesBreakdown: data.loopholesBreakdown || undefined,
+    negotiationAdvice: data.negotiationAdvice || undefined,
   };
 };
 
 export default function AnalysisScreen() {
+  const searchParams = useLocalSearchParams();
   const [activeTab, setActiveTab] = useState('overview');
   const [analysisData, setAnalysisData] = useState<AnalysisData>(DEFAULT_ANALYSIS_DATA);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string>('Contract');
+  const [rawResponse, setRawResponse] = useState<any>(null);
+  const [showRaw, setShowRaw] = useState(false);
 
   const [fontsLoaded] = useFonts({
     'Inter-Regular': Inter_400Regular,
@@ -135,10 +239,36 @@ export default function AnalysisScreen() {
     'Inter-Bold': Inter_700Bold,
   });
 
-  // Fetch sample analysis on component mount
+  // Load analysis from route parameters or fetch sample
   useEffect(() => {
+    const analysisString = searchParams.analysis as string | undefined;
+    const fileNameString = searchParams.fileName as string | undefined;
+    
+    console.log('Route params:', { analysis: analysisString, fileName: fileNameString });
+    
+    if (analysisString) {
+      try {
+        console.log('Parsing analysis from params...');
+        const parsedAnalysis = JSON.parse(analysisString);
+        console.log('Parsed analysis:', parsedAnalysis);
+        
+        if (parsedAnalysis && parsedAnalysis.score !== undefined) {
+          const normalizedData = normalizeAnalysisData(parsedAnalysis);
+          setAnalysisData(normalizedData);
+          setRawResponse(parsedAnalysis);
+          setFileName(fileNameString || 'Contract');
+          setLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error('Error parsing analysis:', err);
+      }
+    }
+    
+    // Fallback to sample analysis
+    console.log('Loading sample analysis...');
     fetchSampleAnalysis();
-  }, []);
+  }, [searchParams.analysis, searchParams.fileName]);
 
   const fetchSampleAnalysis = async () => {
     setLoading(true);
@@ -191,6 +321,7 @@ Any disputes will be resolved through binding arbitration.
       }
 
       const result = await response.json();
+      setRawResponse(result);
       
       if (result.success && result.analysis) {
         // Normalize the data to ensure it has the correct structure
@@ -225,23 +356,6 @@ Any disputes will be resolved through binding arbitration.
     }
   };
 
-  // Safe filtering with fallback
-  const filteredAnalysis = (analysisData?.analysis || []).filter(item => {
-    if (!item) return false;
-    
-    switch (activeTab) {
-      case 'redflags':
-        return item.severity === 'high';
-      case 'loopholes':
-        return item.severity === 'medium';
-      case 'negotiate':
-        return item.severity === 'low' || item.severity === 'info';
-      case 'overview':
-      default:
-        return true;
-    }
-  });
-
   if (!fontsLoaded) {
     return (
       <View style={styles.loadingContainer}>
@@ -253,8 +367,6 @@ Any disputes will be resolved through binding arbitration.
 
   // Safe data access
   const score = analysisData?.score || 0;
-  const overview = analysisData?.overview || '';
-  const analysisItems = analysisData?.analysis || [];
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -262,7 +374,7 @@ Any disputes will be resolved through binding arbitration.
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Contract Analysis</Text>
         <Text style={styles.headerSubtitle}>
-          Employment Contract - ABC Corporation
+          {fileName} - {new Date().toLocaleDateString()}
         </Text>
         <View style={styles.analysisStatus}>
           <Clock size={16} color="#059669" strokeWidth={2} />
@@ -346,39 +458,125 @@ Any disputes will be resolved through binding arbitration.
       {/* Analysis Results */}
       {!loading && (
         <View style={styles.resultsSection}>
-          {filteredAnalysis.length > 0 ? (
-            filteredAnalysis.map((item, index) => (
-              <AnalysisCard
-                key={index}
-                icon={getIconComponent(item.icon)}
-                title={item.title}
-                description={item.description}
-                severity={item.severity}
-                details={item.details}
-              />
-            ))
-          ) : (
-            <View style={styles.emptyState}>
-              <CheckCircle size={32} color="#059669" />
-              <Text style={styles.emptyStateText}>
-                No issues found in this category
-              </Text>
+          {activeTab === 'overview' && (
+            <View>
+              {analysisData.contractDetails && (
+                <View style={styles.detailsBox}>
+                  <Text style={styles.cardLabel}>Start Date:</Text>
+                  <Text style={styles.cardValue}>{analysisData.contractDetails.startDate || 'Not specified'}</Text>
+                  
+                  <Text style={styles.cardLabel}>End Date:</Text>
+                  <Text style={styles.cardValue}>{analysisData.contractDetails.endDate || 'Not specified'}</Text>
+                  
+                  <Text style={styles.cardLabel}>Compensation:</Text>
+                  <Text style={styles.cardValue}>{analysisData.contractDetails.compensation || 'Not specified'}</Text>
+                  
+                  {analysisData.contractDetails.benefits && analysisData.contractDetails.benefits.length > 0 && (
+                    <>
+                      <Text style={styles.cardLabel}>Benefits:</Text>
+                      {analysisData.contractDetails.benefits.map((benefit: string, idx: number) => (
+                        <Text key={idx} style={styles.cardValue}>• {benefit}</Text>
+                      ))}
+                    </>
+                  )}
+                </View>
+              )}
+              
+              {analysisData.overviewCategories && Object.entries(analysisData.overviewCategories).map(([key, category]: any) => (
+                <Card key={key} icon={getIconComponent(category.icon)} title={category.title} severity={category.severity}>
+                  <Text style={styles.cardLabel}>Details:</Text>
+                  <Text style={styles.cardValue}>{category.description}</Text>
+                  <Text style={styles.cardLabel}>Assessment:</Text>
+                  <Text style={styles.cardValue}>{category.assessment}</Text>
+                </Card>
+              ))}
+            </View>
+          )}
+
+          {activeTab === 'redflags' && (
+            <View>
+              {analysisData.redFlags && analysisData.redFlags.length > 0 ? (
+                analysisData.redFlags.map((flag: any, idx: number) => (
+                  <Card key={idx} icon={getIconComponent(flag.icon)} title={flag.title} severity={flag.severity}>
+                    <Text style={styles.cardLabel}>Clause:</Text>
+                    <Text style={styles.cardValue}>{flag.clause || 'N/A'}</Text>
+                    <Text style={styles.cardLabel}>Issue:</Text>
+                    <Text style={styles.cardValue}>{flag.description}</Text>
+                    <Text style={styles.cardLabel}>Legal Implication:</Text>
+                    <Text style={styles.cardValue}>{flag.legalImplication}</Text>
+                    <Text style={styles.cardLabel}>Risk Level:</Text>
+                    <Text style={[styles.cardValue, { color: flag.severity === 'high' ? '#DC2626' : '#F59E0B' }]}>
+                      {flag.riskLevel}
+                    </Text>
+                  </Card>
+                ))
+              ) : (
+                <Text style={styles.emptyState}>No red flags detected</Text>
+              )}
+            </View>
+          )}
+
+          {activeTab === 'loopholes' && (
+            <View>
+              {analysisData.loopholesBreakdown && Object.entries(analysisData.loopholesBreakdown).map(([key, loophole]: any) => (
+                <Card key={key} icon={getIconComponent(loophole.icon)} title={loophole.title} severity={loophole.severity}>
+                  {loophole.issues && loophole.issues.map((issue: string, idx: number) => (
+                    <Text key={idx} style={styles.cardValue}>• {issue}</Text>
+                  ))}
+                  <Text style={[styles.cardLabel, { marginTop: 8 }]}>Exposure:</Text>
+                  <Text style={styles.cardValue}>{loophole.exposure}</Text>
+                </Card>
+              ))}
+            </View>
+          )}
+
+          {activeTab === 'negotiate' && (
+            <View>
+              {analysisData.negotiationAdvice && Object.entries(analysisData.negotiationAdvice).map(([key, advice]: any) => (
+                <Card key={key} icon={getIconComponent(advice.icon)} title={advice.title}>
+                  <Text style={styles.cardLabel}>Current:</Text>
+                  <Text style={[styles.cardValue, styles.currentText]}>"{advice.current}"</Text>
+                  <Text style={styles.cardLabel}>Suggested:</Text>
+                  <Text style={[styles.cardValue, styles.suggestedText]}>"{advice.suggested}"</Text>
+                  <Text style={styles.cardLabel}>Why:</Text>
+                  <Text style={styles.cardValue}>{advice.reasoning}</Text>
+                  <Text style={[styles.cardLabel, { marginTop: 8 }]}>Priority:</Text>
+                  <Text style={[styles.cardValue, { color: '#DC2626' }]}>{advice.priority}</Text>
+                </Card>
+              ))}
             </View>
           )}
         </View>
       )}
 
-      {/* Summary */}
-      {!loading && overview && (
+      {/* AI Summary */}
+      {!loading && analysisData.aiSummary && (
         <View style={styles.summarySection}>
-          <Text style={styles.sectionTitle}>AI Summary</Text>
+          <Text style={styles.sectionTitle}>Contract Summary</Text>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryText}>
-              {overview}
+              {analysisData.aiSummary}
             </Text>
           </View>
         </View>
       )}
+
+        {/* Raw backend response (debug) */}
+        {rawResponse && (
+          <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
+            <TouchableOpacity style={styles.outlineButton} onPress={() => setShowRaw(!showRaw)}>
+              <Text style={styles.outlineButtonText}>{showRaw ? 'Hide' : 'Show'} Backend Raw Response</Text>
+            </TouchableOpacity>
+
+            {showRaw && (
+              <View style={[styles.summaryCard, { marginTop: 12, maxHeight: 300 }] }>
+                <Text style={[styles.summaryText, { fontSize: 12 }]}>
+                  {JSON.stringify(rawResponse, null, 2)}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
       {/* Action Buttons */}
       <View style={styles.actionSection}>
@@ -575,6 +773,36 @@ const styles = StyleSheet.create({
   },
   resultsSection: {
     paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  detailsBox: {
+    backgroundColor: '#EBF4FF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#1E40AF',
+  },
+  cardLabel: {
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
+    color: '#6B7280',
+    marginBottom: 4,
+    marginTop: 8,
+  },
+  cardValue: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#1F2937',
+    lineHeight: 20,
+  },
+  currentText: {
+    fontStyle: 'italic',
+    color: '#DC2626',
+  },
+  suggestedText: {
+    fontStyle: 'italic',
+    color: '#059669',
   },
   analysisCard: {
     backgroundColor: '#FFFFFF',

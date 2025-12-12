@@ -64,79 +64,167 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 /* -------------------- TEXT EXTRACTION -------------------- */
 async function extractPDF(filePath) {
   console.log("[DEBUG] Extracting text from PDF:", filePath);
-  const buffer = fs.readFileSync(filePath);
-  const data = await pdfParse(buffer);
-  console.log("[DEBUG] PDF text length:", data.text.length);
-  return data.text;
+  try {
+    const buffer = fs.readFileSync(filePath);
+    const data = await pdfParse(buffer);
+    const text = data.text || "";
+    console.log("[DEBUG] PDF extraction successful, text length:", text.length);
+    return text;
+  } catch (error) {
+    console.error("[ERROR] PDF extraction failed:", error.message);
+    throw new Error("Failed to extract text from PDF. File may be corrupted or encrypted.");
+  }
 }
 
 async function extractDOCX(filePath) {
   console.log("[DEBUG] Extracting text from DOCX:", filePath);
-  const result = await mammoth.extractRawText({ path: filePath });
-  console.log("[DEBUG] DOCX text length:", result.value.length);
-  return result.value;
+  try {
+    const result = await mammoth.extractRawText({ path: filePath });
+    const text = result.value || "";
+    console.log("[DEBUG] DOCX extraction successful, text length:", text.length);
+    return text;
+  } catch (error) {
+    console.error("[ERROR] DOCX extraction failed:", error.message);
+    throw new Error("Failed to extract text from DOCX. File may be corrupted.");
+  }
 }
 
 async function extractImage(filePath) {
   console.log("[DEBUG] Extracting text from image:", filePath);
-  const worker = await createWorker();
-  await worker.loadLanguage("eng");
-  await worker.initialize("eng");
-  const { data: { text } } = await worker.recognize(filePath);
-  await worker.terminate();
-  console.log("[DEBUG] Image text length:", text.length);
-  return text;
+  try {
+    const worker = await createWorker();
+    await worker.loadLanguage("eng");
+    await worker.initialize("eng");
+    const { data: { text } } = await worker.recognize(filePath);
+    await worker.terminate();
+    console.log("[DEBUG] Image OCR extraction successful, text length:", text.length);
+    return text || "";
+  } catch (error) {
+    console.error("[ERROR] Image OCR extraction failed:", error.message);
+    await worker.terminate().catch(() => {});
+    throw new Error("Failed to extract text from image using OCR.");
+  }
 }
 
 /* -------------------- AI CONTRACT ANALYSIS -------------------- */
 async function analyzeContract(text, language = "en") {
   console.log("[DEBUG] Analyzing contract text length:", text.length);
   
+  if (!text || text.trim().length === 0) {
+    console.error("[ERROR] Empty text provided for analysis");
+    throw new Error("No text available for analysis");
+  }
+  
   const prompt = `
-You are a South African contract law expert. Analyze this employment contract and return ONLY valid JSON in this exact structure:
+You are an expert South African contract law attorney with 15+ years of experience in employment law, commercial contracts, and legal compliance. Analyze this contract COMPREHENSIVELY and return ONLY valid JSON.
+
+EXTRACT AND RETURN THIS EXACT STRUCTURE:
 
 {
-  "score": 72,
-  "overview": "This employment contract has some concerning clauses that could disadvantage you. The termination clause violates BCEA requirements, and the non-compete period is excessive. However, payment terms are fair and comply with labour law.",
-  "analysis": [
+  "score": 65,
+  "contractDetails": {
+    "startDate": "Exact start date from contract or 'Not specified'",
+    "endDate": "Exact end date from contract or 'Not specified' or 'No end date (indefinite)'",
+    "compensation": "Total salary/fees/consideration mentioned",
+    "benefits": ["Benefit 1", "Benefit 2", "Benefit 3"],
+    "terminationClause": "Summary of how either party can terminate",
+    "keyLoopholes": ["Loophole 1", "Loophole 2"]
+  },
+  "aiSummary": "A comprehensive 4-5 sentence summary combining: start date, end date, compensation, benefits offered, termination terms, and any major loopholes. Example: 'This contract is effective from [DATE] to [DATE] with an annual compensation of [AMOUNT] plus [BENEFITS]. Termination can occur with [NOTICE PERIOD]. However, significant loopholes include [LOOPHOLES].'",
+  "overviewCategories": {
+    "earlyTerminationClause": {
+      "icon": "alert-triangle",
+      "title": "Early Termination Clause",
+      "description": "Details about early termination, notice periods, and conditions",
+      "assessment": "Whether this is fair or problematic",
+      "severity": "high|medium|low"
+    },
+    "fairCompetition": {
+      "icon": "zap",
+      "title": "Fair Competition & Non-Compete",
+      "description": "Non-compete period, geographic scope, and reasonableness",
+      "assessment": "Is it reasonable or too restrictive?",
+      "severity": "high|medium|low"
+    },
+    "disputeResolution": {
+      "icon": "message-square",
+      "title": "Lack of Clear Dispute Resolution",
+      "description": "Whether contract has dispute resolution mechanism",
+      "assessment": "Mediation, arbitration, or litigation path",
+      "severity": "high|medium|low"
+    },
+    "insuranceRequirements": {
+      "icon": "shield",
+      "title": "Insurance Requirements",
+      "description": "Any insurance obligations or protections required",
+      "assessment": "Are insurance requirements adequate?",
+      "severity": "high|medium|low"
+    }
+  },
+  "redFlags": [
     {
       "icon": "alert-triangle",
-      "title": "Illegal Termination Clause",
-      "description": "Clause 4.2 violates BCEA Section 188",
+      "title": "Flag Title",
       "severity": "high",
-      "details": "The contract allows termination without proper notice period required by the Basic Conditions of Employment Act. This clause is unenforceable and you can challenge it legally."
-    },
-    {
-      "icon": "zap",
-      "title": "Unfair Non-Compete",
-      "description": "6-month restriction may be excessive",
-      "severity": "medium", 
-      "details": "The non-compete clause extends for 6 months which may be deemed unreasonable by SA courts. Consider negotiating down to 3 months or adding geographic limitations."
-    },
-    {
-      "icon": "check-circle",
-      "title": "Fair Salary Payment", 
-      "description": "Payment terms comply with labour law",
-      "severity": "low",
-      "details": "Monthly salary payments within 7 days of month-end comply with standard employment practices and BCEA requirements."
-    },
-    {
-      "icon": "message-square",
-      "title": "Missing Dispute Resolution",
-      "description": "No clear process for handling disputes", 
-      "severity": "info",
-      "details": "The contract lacks a dispute resolution mechanism. Consider adding a clause requiring mediation before litigation to save costs."
+      "description": "Specific problematic clause",
+      "clause": "Clause reference number",
+      "legalImplication": "How this violates SA law",
+      "riskLevel": "Financial/Legal/Career"
     }
-  ]
+  ],
+  "loopholesBreakdown": {
+    "earlyTerminationClause": {
+      "icon": "zap",
+      "title": "Early Termination Loopholes",
+      "issues": ["Issue 1", "Issue 2"],
+      "exposure": "How this could disadvantage you",
+      "severity": "high"
+    },
+    "insuranceRequirements": {
+      "icon": "shield",
+      "title": "Insurance Requirement Loopholes",
+      "issues": ["Issue 1", "Issue 2"],
+      "exposure": "How this could disadvantage you",
+      "severity": "medium"
+    }
+  },
+  "negotiationAdvice": {
+    "fairCompensation": {
+      "icon": "coins",
+      "title": "Advice on Fair Compensation",
+      "current": "What the contract currently states about compensation",
+      "suggested": "What you should negotiate for based on market standards",
+      "reasoning": "Why this adjustment is justified",
+      "priority": "high"
+    },
+    "disputeResolution": {
+      "icon": "message-square",
+      "title": "Clear Dispute Resolution Advice",
+      "current": "Current dispute resolution mechanism (or lack thereof)",
+      "suggested": "Recommended dispute resolution path",
+      "reasoning": "Why this protects you better",
+      "priority": "high"
+    }
+  }
 }
 
-Contract Text to analyze:
-${text.substring(0, 52000)} // Limit text to avoid token limits
+CONTRACT TEXT (first 40000 characters):
+${text.substring(0, 40000)}
 
-Return ONLY the JSON, no other text.
+CRITICAL ANALYSIS REQUIREMENTS:
+1. SCORE: Calculate 0-100 based on fairness. Factors: fair pay, reasonable termination, clear dispute resolution, balanced non-compete, insurance clarity. (High risk issues = lower score)
+2. CONTRACT DETAILS: Extract EXACT dates, compensation amounts, and specific benefits listed
+3. AI SUMMARY: Must be 4-5 sentences combining all critical details: dates, pay, benefits, termination, and loopholes
+4. OVERVIEW CATEGORIES: Provide assessment for EACH of the 4 categories (termination, competition, dispute resolution, insurance)
+5. RED FLAGS: List ALL problematic clauses with legal references and South African law implications
+6. LOOPHOLES: Focus on early termination and insurance loopholes with specific exposure risks
+7. NEGOTIATION: Give specific advice on compensation and dispute resolution based on SA law
+
+Return ONLY valid JSON, no markdown, no code blocks, no extra text.
 `;
 
   try {
+    console.log("[DEBUG] Sending request to Groq AI");
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       temperature: 0.1,
@@ -145,37 +233,66 @@ Return ONLY the JSON, no other text.
     });
 
     let analysisText = completion.choices[0].message.content;
-    console.log("[DEBUG] Raw AI response:", analysisText);
+    console.log("[DEBUG] Raw AI response received, length:", analysisText.length);
 
     // Clean the response
     analysisText = analysisText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
     
     const analysis = JSON.parse(analysisText);
-    console.log("[DEBUG] Parsed analysis:", analysis);
+    console.log("[DEBUG] Parsed analysis successfully");
 
-    // Validate and ensure proper structure
-    return {
-      score: analysis.score || 50,
-      overview: analysis.overview || "Contract analysis completed.",
-      analysis: Array.isArray(analysis.analysis) ? analysis.analysis : []
+    // Validate and ensure proper structure - return analysis as-is from Groq
+    const validatedAnalysis = {
+      score: typeof analysis.score === 'number' && analysis.score >= 0 && analysis.score <= 100 ? analysis.score : 50,
+      aiSummary: typeof analysis.aiSummary === 'string' ? analysis.aiSummary : "Contract analysis completed.",
+      contractDetails: analysis.contractDetails || {},
+      overviewCategories: analysis.overviewCategories || {},
+      redFlags: Array.isArray(analysis.redFlags) ? analysis.redFlags.filter(item => 
+        item && typeof item === 'object' && item.title && item.description
+      ) : [],
+      loopholesBreakdown: analysis.loopholesBreakdown || {},
+      negotiationAdvice: analysis.negotiationAdvice || {}
     };
+
+    console.log("[DEBUG] Validated analysis items - RedFlags:", validatedAnalysis.redFlags.length, 
+      "Overview Categories:", Object.keys(validatedAnalysis.overviewCategories).length);
+    return validatedAnalysis;
 
   } catch (err) {
     console.error("[ERROR] AI analysis failed:", err.message);
     
-    // Fallback analysis
+    // Return a more helpful fallback analysis with new structure
     return {
-      score: 50,
-      overview: "Basic contract analysis completed. Some clauses need review.",
-      analysis: [
+      score: 55,
+      aiSummary: "Contract analysis completed. Unable to use AI analysis due to service limitations. Please consult with a legal professional for detailed review.",
+      contractDetails: {
+        startDate: "Not specified",
+        endDate: "Not specified",
+        compensation: "Not specified",
+        benefits: [],
+        terminationClause: "See contract",
+        keyLoopholes: []
+      },
+      overviewCategories: {
+        earlyTerminationClause: {
+          icon: "alert-triangle",
+          title: "Early Termination Clause",
+          description: "Unable to analyze",
+          assessment: "Please review manually",
+          severity: "medium"
+        }
+      },
+      redFlags: [
         {
           icon: "alert-triangle",
-          title: "Review Required",
+          title: "Professional Review Recommended",
           description: "Contract needs professional legal review",
-          severity: "medium",
-          details: "Please consult with a legal professional for detailed analysis of this contract."
+          legalImplication: "Complex clauses require expert interpretation",
+          riskLevel: "Medium"
         }
-      ]
+      ],
+      loopholesBreakdown: {},
+      negotiationAdvice: {}
     };
   }
 }
@@ -186,49 +303,86 @@ app.post("/api/analyze/upload", upload.single("file"), async (req, res) => {
 
   try {
     if (!req.file) {
+      console.error("[ERROR] No file uploaded");
       return res.status(400).json({ error: "No file uploaded." });
     }
+
+    console.log("[DEBUG] File details:", {
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+      path: req.file.path
+    });
 
     let extracted = "";
     const mimeType = req.file.mimetype;
 
     try {
+      // Determine file type and extract text accordingly
       if (mimeType === "application/pdf") {
         extracted = await extractPDF(req.file.path);
-      } else if (mimeType.includes("word")) {
+      } else if (mimeType.includes("word") || mimeType.includes("document")) {
         extracted = await extractDOCX(req.file.path);
       } else if (mimeType.startsWith("image/")) {
         extracted = await extractImage(req.file.path);
       } else {
+        // Attempt to read as text file
+        console.log("[DEBUG] Attempting to read file as text");
         extracted = fs.readFileSync(req.file.path, "utf8");
       }
     } catch (extractError) {
-      console.error("[ERROR] Text extraction failed:", extractError);
-      return res.status(400).json({ error: "Failed to extract text from file" });
+      console.error("[ERROR] Text extraction failed:", extractError.message);
+      
+      // Clean up file
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (cleanupError) {
+        console.warn("[WARN] Failed to delete temp file:", cleanupError);
+      }
+      
+      return res.status(400).json({ 
+        error: extractError.message || "Failed to extract text from file. Please ensure the file is a valid PDF, DOCX, or image."
+      });
     }
 
     console.log("[DEBUG] Extracted text length:", extracted.length);
 
-    if (!extracted.trim()) {
-      fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: "No text could be extracted from the file." });
+    // Check if we got any text
+    if (!extracted || !extracted.trim() || extracted.trim().length < 10) {
+      console.error("[ERROR] Extracted text is empty or too short");
+      
+      // Clean up file
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (cleanupError) {
+        console.warn("[WARN] Failed to delete temp file:", cleanupError);
+      }
+      
+      return res.status(400).json({ 
+        error: "No readable text found in the file. Please ensure the file contains text and is not corrupted or image-based without OCR support." 
+      });
     }
 
+    // Analyze the extracted text
+    console.log("[DEBUG] Starting contract analysis");
     const aiAnalysis = await analyzeContract(extracted, req.body.language || "en");
     
-    // Clean up file
+    // Clean up uploaded file (no longer needed)
     try {
       fs.unlinkSync(req.file.path);
+      console.log("[DEBUG] Temporary file cleaned up");
     } catch (cleanupError) {
       console.warn("[WARN] Failed to delete temp file:", cleanupError);
     }
 
+    // Store the analysis result
     const id = uuidv4();
     const record = { 
       id, 
       analysis: aiAnalysis, 
       createdAt: new Date(),
-      fileName: req.file.originalname 
+      fileName: req.file.originalname,
+      textLength: extracted.length
     };
     
     recentAnalyses.set(id, record);
@@ -239,10 +393,13 @@ app.post("/api/analyze/upload", upload.single("file"), async (req, res) => {
       recentAnalyses.delete(firstKey);
     }
 
+    console.log("[DEBUG] Analysis completed successfully, ID:", id);
+
     res.json({ 
       success: true, 
       id, 
-      analysis: aiAnalysis 
+      analysis: aiAnalysis,
+      fileName: req.file.originalname
     });
 
   } catch (err) {

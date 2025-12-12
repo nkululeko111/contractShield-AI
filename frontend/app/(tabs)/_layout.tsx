@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Shield, FileText, Search, User } from 'lucide-react-native';
+import { Shield, FileText, Search } from 'lucide-react-native';
 
 export default function TabLayout() {
   return (
@@ -49,15 +49,7 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ size, color }) => (
-            <User size={size} color={color} strokeWidth={2} />
-          ),
-        }}
-      />
+      {/* Profile tab removed per request */}
     </Tabs>
   );
 }
