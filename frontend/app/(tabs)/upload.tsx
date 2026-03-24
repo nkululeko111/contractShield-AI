@@ -7,24 +7,23 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Upload, FileText, X, CheckCircle, Loader } from 'lucide-react-native';
 import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import * as FileSystem from 'expo-file-system';
+import { getApiBaseUrl } from '../../lib/apiConfig';
+import {
+  JurisdictionPicker,
+  type JurisdictionItem,
+} from '../../components/JurisdictionPicker';
 
 const { width } = Dimensions.get('window');
 
-// Determine API base URL based on environment
-const getAPIBaseURL = () => {
-  try {
-    if (typeof window !== 'undefined' && window.location) {
-      return window.location.hostname === 'localhost' 
-        ? 'http://localhost:5000/api'
-        : 'http://10.0.2.2:5000/api';
-    }
-  } catch (e) {
-    // Fallback for React Native
-  }
-  return 'http://localhost:5000/api'; // Default
-};
+const API_BASE_URL = getApiBaseUrl();
 
-const API_BASE_URL = getAPIBaseURL();
+const JURISDICTION_FALLBACK: JurisdictionItem[] = [
+  { id: 'AFRICA', name: 'Africa (general)', shortName: 'Africa (general)' },
+  { id: 'ZA', name: 'South Africa', shortName: 'South Africa' },
+  { id: 'NG', name: 'Nigeria', shortName: 'Nigeria' },
+  { id: 'KE', name: 'Kenya', shortName: 'Kenya' },
+  { id: 'GH', name: 'Ghana', shortName: 'Ghana' },
+];
 
 const UploadOption = ({ icon, title, description, onPress, color, loading }: any) => (
   <TouchableOpacity
@@ -50,6 +49,8 @@ export default function UploadScreen() {
   const [recentUploads, setRecentUploads] = useState([]);
   const [textModalVisible, setTextModalVisible] = useState(false);
   const [pastedText, setPastedText] = useState('');
+  const [jurisdictions, setJurisdictions] = useState<JurisdictionItem[]>(JURISDICTION_FALLBACK);
+  const [selectedJurisdictionId, setSelectedJurisdictionId] = useState('ZA');
   const router = useRouter();
 
   const [fontsLoaded] = useFonts({
@@ -60,6 +61,26 @@ export default function UploadScreen() {
 
   useEffect(() => {
     loadRecentUploads();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/jurisdictions`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = data?.jurisdictions;
+        if (!cancelled && Array.isArray(list) && list.length > 0) {
+          setJurisdictions(list);
+        }
+      } catch {
+        /* keep fallback list */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const loadRecentUploads = async () => {
@@ -180,7 +201,10 @@ export default function UploadScreen() {
         type: file.mimeType || 'application/octet-stream',
       } as any);
     }
-    
+
+    formData.append('jurisdiction', selectedJurisdictionId);
+    formData.append('language', 'en');
+
     console.log('FormData prepared with file:', file.name, 'Type:', file.mimeType || file.type);
 
     // Send POST request
@@ -226,6 +250,9 @@ export default function UploadScreen() {
             analysisId: data.id || 'unknown',
             analysis: JSON.stringify(data.analysis),
             fileName: file.name || 'unknown',
+            jurisdiction: data.jurisdiction
+              ? JSON.stringify(data.jurisdiction)
+              : JSON.stringify({ id: selectedJurisdictionId, name: '' }),
           },
         });
       }, 1000);
@@ -260,7 +287,11 @@ export default function UploadScreen() {
       const response = await fetch(`${API_BASE_URL}/analyze/text`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: pastedText }),
+        body: JSON.stringify({
+          text: pastedText,
+          language: 'en',
+          jurisdiction: selectedJurisdictionId,
+        }),
       });
 
       setUploadProgress(80);
@@ -280,6 +311,9 @@ export default function UploadScreen() {
               analysisId: data.id,
               analysis: JSON.stringify(data.analysis),
               fileName: 'Text Input',
+              jurisdiction: data.jurisdiction
+                ? JSON.stringify(data.jurisdiction)
+                : JSON.stringify({ id: selectedJurisdictionId, name: '' }),
             },
           });
         }, 1000);
@@ -300,6 +334,13 @@ export default function UploadScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Upload Contract</Text>
         <Text style={styles.headerSubtitle}>Choose how you'd like to upload your contract for AI analysis</Text>
+        <JurisdictionPicker
+          jurisdictions={jurisdictions}
+          selectedId={selectedJurisdictionId}
+          onSelect={setSelectedJurisdictionId}
+          disabled={isUploading}
+          label="African jurisdiction / legal context"
+        />
       </View>
 
       {!isUploading ? (
@@ -327,11 +368,11 @@ export default function UploadScreen() {
           <View style={styles.tipsSection}>
             <Text style={styles.sectionTitle}>Upload Tips</Text>
             <View style={styles.tipsList}>
+              <Text style={styles.tip}>• Phone on same Wi‑Fi as your computer when using a local backend</Text>
+              <Text style={styles.tip}>• If analysis fails to connect, set EXPO_PUBLIC_API_URL to your PC’s IP (e.g. http://192.168.1.10:5000)</Text>
               <Text style={styles.tip}>• Ensure document is clear and readable</Text>
               <Text style={styles.tip}>• PDF and DOC files work best</Text>
-              <Text style={styles.tip}>• All pages must be included for complete analysis</Text>
-              <Text style={styles.tip}>• Images will use OCR to extract text</Text>
-              <Text style={styles.tip}>• Text input should be accurate and complete</Text>
+              <Text style={styles.tip}>• Images use OCR to extract text</Text>
             </View>
           </View>
         </>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,12 +10,32 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Zap, MessageSquare, Globe, Clock, Upload, FileText } from 'lucide-react-native';
+import { TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Zap, MessageSquare, Globe, Clock, Upload, FileText, Shield, Coins } from 'lucide-react-native';
 import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
+import { getApiBaseUrl } from '../../lib/apiConfig';
+import {
+  JurisdictionPicker,
+  type JurisdictionItem,
+} from '../../components/JurisdictionPicker';
 
 const { width } = Dimensions.get('window');
 
+const API_BASE_URL = getApiBaseUrl();
+
+const JURISDICTION_FALLBACK: JurisdictionItem[] = [
+  { id: 'AFRICA', name: 'Africa (general)', shortName: 'Africa (general)' },
+  { id: 'ZA', name: 'South Africa', shortName: 'South Africa' },
+  { id: 'NG', name: 'Nigeria', shortName: 'Nigeria' },
+  { id: 'KE', name: 'Kenya', shortName: 'Kenya' },
+];
+
 type Severity = 'high' | 'medium' | 'low' | 'info';
+
+function normalizeSeverity(s: unknown): Severity {
+  const v = typeof s === 'string' ? s.toLowerCase() : '';
+  if (v === 'high' || v === 'medium' || v === 'low' || v === 'info') return v;
+  return 'info';
+}
 
 interface AnalysisItem {
   icon: string;
@@ -166,8 +186,6 @@ const Card = ({ icon, title, severity = 'info', children }: CardProps) => {
   );
 };
 
-const API_BASE_URL = 'http://localhost:5000/api';
-
 // Default demo data to prevent undefined errors
 const DEFAULT_ANALYSIS_DATA: AnalysisData = {
   score: 72,
@@ -232,6 +250,8 @@ export default function AnalysisScreen() {
   const [fileName, setFileName] = useState<string>('Contract');
   const [rawResponse, setRawResponse] = useState<any>(null);
   const [showRaw, setShowRaw] = useState(false);
+  const [jurisdictions, setJurisdictions] = useState<JurisdictionItem[]>(JURISDICTION_FALLBACK);
+  const [selectedJurisdictionId, setSelectedJurisdictionId] = useState('ZA');
 
   const [fontsLoaded] = useFonts({
     'Inter-Regular': Inter_400Regular,
@@ -239,41 +259,31 @@ export default function AnalysisScreen() {
     'Inter-Bold': Inter_700Bold,
   });
 
-  // Load analysis from route parameters or fetch sample
   useEffect(() => {
-    const analysisString = searchParams.analysis as string | undefined;
-    const fileNameString = searchParams.fileName as string | undefined;
-    
-    console.log('Route params:', { analysis: analysisString, fileName: fileNameString });
-    
-    if (analysisString) {
+    let cancelled = false;
+    (async () => {
       try {
-        console.log('Parsing analysis from params...');
-        const parsedAnalysis = JSON.parse(analysisString);
-        console.log('Parsed analysis:', parsedAnalysis);
-        
-        if (parsedAnalysis && parsedAnalysis.score !== undefined) {
-          const normalizedData = normalizeAnalysisData(parsedAnalysis);
-          setAnalysisData(normalizedData);
-          setRawResponse(parsedAnalysis);
-          setFileName(fileNameString || 'Contract');
-          setLoading(false);
-          return;
+        const res = await fetch(`${API_BASE_URL}/jurisdictions`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = data?.jurisdictions;
+        if (!cancelled && Array.isArray(list) && list.length > 0) {
+          setJurisdictions(list);
         }
-      } catch (err) {
-        console.error('Error parsing analysis:', err);
+      } catch {
+        /* keep fallback */
       }
-    }
-    
-    // Fallback to sample analysis
-    console.log('Loading sample analysis...');
-    fetchSampleAnalysis();
-  }, [searchParams.analysis, searchParams.fileName]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const fetchSampleAnalysis = async () => {
+  const fetchSampleAnalysis = useCallback(async (jurisdictionOverride?: string) => {
+    const jid = jurisdictionOverride ?? selectedJurisdictionId;
     setLoading(true);
     setError(null);
-    
+
     try {
       const sampleContractText = `
 EMPLOYMENT CONTRACT
@@ -313,6 +323,7 @@ Any disputes will be resolved through binding arbitration.
         body: JSON.stringify({
           text: sampleContractText,
           language: 'en',
+          jurisdiction: jid,
         }),
       });
 
@@ -322,11 +333,13 @@ Any disputes will be resolved through binding arbitration.
 
       const result = await response.json();
       setRawResponse(result);
-      
+
       if (result.success && result.analysis) {
-        // Normalize the data to ensure it has the correct structure
         const normalizedData = normalizeAnalysisData(result.analysis);
         setAnalysisData(normalizedData);
+        if (result.jurisdiction?.id) {
+          setSelectedJurisdictionId(result.jurisdiction.id);
+        }
       } else {
         throw new Error('Invalid response format from server');
       }
@@ -334,12 +347,56 @@ Any disputes will be resolved through binding arbitration.
       console.error('Analysis fetch error:', err);
       const message = err instanceof Error ? err.message : String(err);
       setError(message || 'Failed to analyze contract');
-      // Use default data if API fails
       setAnalysisData(DEFAULT_ANALYSIS_DATA);
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedJurisdictionId]);
+
+  // Load analysis from route parameters or fetch sample
+  useEffect(() => {
+    const analysisString = searchParams.analysis as string | undefined;
+    const fileNameString = searchParams.fileName as string | undefined;
+    const jurisdictionString = searchParams.jurisdiction as string | undefined;
+
+    console.log('Route params:', { analysis: analysisString, fileName: fileNameString });
+
+    let jurisdictionForSample = selectedJurisdictionId;
+    if (jurisdictionString) {
+      try {
+        const j = JSON.parse(jurisdictionString);
+        if (j?.id && typeof j.id === 'string') {
+          jurisdictionForSample = j.id;
+          setSelectedJurisdictionId(j.id);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (analysisString) {
+      try {
+        console.log('Parsing analysis from params...');
+        const parsedAnalysis = JSON.parse(analysisString);
+        console.log('Parsed analysis:', parsedAnalysis);
+
+        if (parsedAnalysis && parsedAnalysis.score !== undefined) {
+          const normalizedData = normalizeAnalysisData(parsedAnalysis);
+          setAnalysisData(normalizedData);
+          setRawResponse(parsedAnalysis);
+          setFileName(fileNameString || 'Contract');
+          setLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error('Error parsing analysis:', err);
+      }
+    }
+
+    console.log('Loading sample analysis...');
+    fetchSampleAnalysis(jurisdictionForSample);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when route search params change
+  }, [searchParams.analysis, searchParams.fileName, searchParams.jurisdiction]);
 
   const getIconComponent = (iconName: string) => {
     switch (iconName) {
@@ -351,6 +408,10 @@ Any disputes will be resolved through binding arbitration.
         return <CheckCircle size={20} color="#059669" strokeWidth={2} />;
       case 'message-square':
         return <MessageSquare size={20} color="#1E40AF" strokeWidth={2} />;
+      case 'shield':
+        return <Shield size={20} color="#059669" strokeWidth={2} />;
+      case 'coins':
+        return <Coins size={20} color="#D97706" strokeWidth={2} />;
       default:
         return <AlertTriangle size={20} color="#6B7280" strokeWidth={2} />;
     }
@@ -376,6 +437,13 @@ Any disputes will be resolved through binding arbitration.
         <Text style={styles.headerSubtitle}>
           {fileName} - {new Date().toLocaleDateString()}
         </Text>
+        <JurisdictionPicker
+          jurisdictions={jurisdictions}
+          selectedId={selectedJurisdictionId}
+          onSelect={setSelectedJurisdictionId}
+          disabled={loading}
+          label="Jurisdiction for sample / re-analysis"
+        />
         <View style={styles.analysisStatus}>
           <Clock size={16} color="#059669" strokeWidth={2} />
           <Text style={styles.statusText}>Analyzed just now</Text>
@@ -449,7 +517,7 @@ Any disputes will be resolved through binding arbitration.
           <AlertTriangle size={24} color="#DC2626" />
           <Text style={styles.errorText}>{error}</Text>
           <Text style={styles.errorSubtext}>Showing demo analysis</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={fetchSampleAnalysis}>
+          <TouchableOpacity style={styles.retryButton} onPress={() => fetchSampleAnalysis()}>
             <Text style={styles.retryButtonText}>Retry Analysis</Text>
           </TouchableOpacity>
         </View>
@@ -483,7 +551,7 @@ Any disputes will be resolved through binding arbitration.
               )}
               
               {analysisData.overviewCategories && Object.entries(analysisData.overviewCategories).map(([key, category]: any) => (
-                <Card key={key} icon={getIconComponent(category.icon)} title={category.title} severity={category.severity}>
+                <Card key={key} icon={getIconComponent(category.icon)} title={category.title} severity={normalizeSeverity(category.severity)}>
                   <Text style={styles.cardLabel}>Details:</Text>
                   <Text style={styles.cardValue}>{category.description}</Text>
                   <Text style={styles.cardLabel}>Assessment:</Text>
@@ -497,7 +565,7 @@ Any disputes will be resolved through binding arbitration.
             <View>
               {analysisData.redFlags && analysisData.redFlags.length > 0 ? (
                 analysisData.redFlags.map((flag: any, idx: number) => (
-                  <Card key={idx} icon={getIconComponent(flag.icon)} title={flag.title} severity={flag.severity}>
+                  <Card key={idx} icon={getIconComponent(flag.icon)} title={flag.title} severity={normalizeSeverity(flag.severity)}>
                     <Text style={styles.cardLabel}>Clause:</Text>
                     <Text style={styles.cardValue}>{flag.clause || 'N/A'}</Text>
                     <Text style={styles.cardLabel}>Issue:</Text>
@@ -506,7 +574,7 @@ Any disputes will be resolved through binding arbitration.
                     <Text style={styles.cardValue}>{flag.legalImplication}</Text>
                     <Text style={styles.cardLabel}>Risk Level:</Text>
                     <Text style={[styles.cardValue, { color: flag.severity === 'high' ? '#DC2626' : '#F59E0B' }]}>
-                      {flag.riskLevel}
+                      {flag.riskLevel ?? 'Not specified'}
                     </Text>
                   </Card>
                 ))
@@ -519,7 +587,7 @@ Any disputes will be resolved through binding arbitration.
           {activeTab === 'loopholes' && (
             <View>
               {analysisData.loopholesBreakdown && Object.entries(analysisData.loopholesBreakdown).map(([key, loophole]: any) => (
-                <Card key={key} icon={getIconComponent(loophole.icon)} title={loophole.title} severity={loophole.severity}>
+                <Card key={key} icon={getIconComponent(loophole.icon)} title={loophole.title} severity={normalizeSeverity(loophole.severity)}>
                   {loophole.issues && loophole.issues.map((issue: string, idx: number) => (
                     <Text key={idx} style={styles.cardValue}>• {issue}</Text>
                   ))}
@@ -592,7 +660,7 @@ Any disputes will be resolved through binding arbitration.
 
         <TouchableOpacity 
           style={styles.outlineButton}
-          onPress={fetchSampleAnalysis}
+          onPress={() => fetchSampleAnalysis()}
         >
           <FileText size={16} color="#1E40AF" strokeWidth={2} />
           <Text style={styles.outlineButtonText}>Re-analyze Contract</Text>

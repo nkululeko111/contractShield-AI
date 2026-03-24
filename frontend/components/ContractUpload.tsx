@@ -49,7 +49,7 @@ export default function ContractUpload({ onUploadComplete }: ContractUploadProps
         <Upload size={48} color="#6B7280" strokeWidth={1.5} />
         <Text style={styles.uploadTitle}>Upload Your Contract</Text>
         <Text style={styles.uploadSubtitle}>
-          Drag and drop or tap to select a file
+          Tap to choose a file from your device
         </Text>
         
         <View style={styles.buttonContainer}>

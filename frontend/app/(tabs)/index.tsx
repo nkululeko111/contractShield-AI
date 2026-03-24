@@ -10,7 +10,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Shield, FileText, TriangleAlert as AlertTriangle, Users, Zap, Globe } from 'lucide-react-native';
 import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
-import { useNavigation } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 
@@ -38,7 +38,7 @@ export default function HomeScreen() {
     'Inter-Bold': Inter_700Bold,
   });
   
-  const navigation = useNavigation<any>();
+  const router = useRouter();
 
   if (!fontsLoaded) {
     return null;
@@ -64,7 +64,7 @@ export default function HomeScreen() {
           {/* Link to Upload Page */}
           <TouchableOpacity
             style={styles.ctaButton}
-            onPress={() => navigation.navigate('upload')}
+            onPress={() => router.push('/upload')}
           >
             <Text style={styles.ctaButtonText}>Analyze Your First Contract</Text>
           </TouchableOpacity>
@@ -73,7 +73,7 @@ export default function HomeScreen() {
 
       {/* Stats Section */}
       <View style={styles.statsSection}>
-        <Text style={styles.sectionTitle}>Protecting South Africans</Text>
+        <Text style={styles.sectionTitle}>Built for Africa</Text>
         <View style={styles.statsGrid}>
           <StatCard number="50K+" label="Contracts Analyzed" />
           <StatCard number="R25M+" label="Money Saved" />
@@ -116,8 +116,8 @@ export default function HomeScreen() {
         
         <FeatureCard
           icon={<Globe size={24} color="#EA580C" strokeWidth={2} />}
-          title="SA Law Specific"
-          description="Cross-checks against BCEA, CPA, NCA, POPIA, and Rental Housing Act"
+          title="African legal context"
+          description="Pick your country or a continental lens; analysis is framed for local employment and commercial rules"
           color="#EA580C"
         />
       </View>
@@ -151,11 +151,11 @@ export default function HomeScreen() {
       <View style={styles.bottomCta}>
         <Text style={styles.ctaTitle}>Ready to Protect Yourself?</Text>
         <Text style={styles.ctaSubtitle}>
-          Join thousands of South Africans taking control of their contracts
+          Join users across Africa taking control of their contracts
         </Text>
         <TouchableOpacity
           style={styles.primaryButton}
-          onPress={() => navigation.navigate('upload')}
+          onPress={() => router.push('/upload')}
         >
           <Text style={styles.primaryButtonText}>Start  Now</Text>
         </TouchableOpacity>

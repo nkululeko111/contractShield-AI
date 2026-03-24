@@ -4,14 +4,14 @@ const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
 const { createWorker } = require("tesseract.js");
 const { Groq } = require("groq-sdk");
-const { OpenAI } = require("openai");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const fs = require("fs");
 const path = require("path");
 const rateLimit = require("express-rate-limit");
-const { v4: uuidv4 } = require("uuid");
+const { randomUUID } = require("crypto");
+const { getJurisdictionById, listForApi } = require("./jurisdictions");
 require("dotenv").config();
 
 const recentAnalyses = new Map();
@@ -59,7 +59,6 @@ const upload = multer({
 
 /* -------------------- AI CLIENTS -------------------- */
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /* -------------------- TEXT EXTRACTION -------------------- */
 async function extractPDF(filePath) {
@@ -91,32 +90,46 @@ async function extractDOCX(filePath) {
 
 async function extractImage(filePath) {
   console.log("[DEBUG] Extracting text from image:", filePath);
+  let worker;
   try {
-    const worker = await createWorker();
+    worker = await createWorker();
     await worker.loadLanguage("eng");
     await worker.initialize("eng");
-    const { data: { text } } = await worker.recognize(filePath);
+    const {
+      data: { text },
+    } = await worker.recognize(filePath);
     await worker.terminate();
+    worker = null;
     console.log("[DEBUG] Image OCR extraction successful, text length:", text.length);
     return text || "";
   } catch (error) {
     console.error("[ERROR] Image OCR extraction failed:", error.message);
-    await worker.terminate().catch(() => {});
+    if (worker) {
+      await worker.terminate().catch(() => {});
+    }
     throw new Error("Failed to extract text from image using OCR.");
   }
 }
 
 /* -------------------- AI CONTRACT ANALYSIS -------------------- */
-async function analyzeContract(text, language = "en") {
-  console.log("[DEBUG] Analyzing contract text length:", text.length);
-  
+async function analyzeContract(text, options = {}) {
+  const language = typeof options.language === "string" ? options.language : "en";
+  const jurisdiction = getJurisdictionById(options.jurisdiction);
+
+  console.log("[DEBUG] Analyzing contract text length:", text.length, "jurisdiction:", jurisdiction.id);
+
   if (!text || text.trim().length === 0) {
     console.error("[ERROR] Empty text provided for analysis");
     throw new Error("No text available for analysis");
   }
-  
+
   const prompt = `
-You are an expert South African contract law attorney with 15+ years of experience in employment law, commercial contracts, and legal compliance. Analyze this contract COMPREHENSIVELY and return ONLY valid JSON.
+You are an expert contract law attorney with 15+ years of experience in employment law, commercial contracts, and legal compliance. Analyze this contract COMPREHENSIVELY for parties operating under ${jurisdiction.name} and return ONLY valid JSON.
+
+JURISDICTION CONTEXT (apply this when assessing legality and risk):
+${jurisdiction.legalFocus}
+
+Language of analysis output: ${language === "en" ? "English" : language}.
 
 EXTRACT AND RETURN THIS EXACT STRUCTURE:
 
@@ -168,7 +181,7 @@ EXTRACT AND RETURN THIS EXACT STRUCTURE:
       "severity": "high",
       "description": "Specific problematic clause",
       "clause": "Clause reference number",
-      "legalImplication": "How this violates SA law",
+      "legalImplication": "How this may violate or conflict with applicable law in the selected jurisdiction",
       "riskLevel": "Financial/Legal/Career"
     }
   ],
@@ -216,9 +229,9 @@ CRITICAL ANALYSIS REQUIREMENTS:
 2. CONTRACT DETAILS: Extract EXACT dates, compensation amounts, and specific benefits listed
 3. AI SUMMARY: Must be 4-5 sentences combining all critical details: dates, pay, benefits, termination, and loopholes
 4. OVERVIEW CATEGORIES: Provide assessment for EACH of the 4 categories (termination, competition, dispute resolution, insurance)
-5. RED FLAGS: List ALL problematic clauses with legal references and South African law implications
+5. RED FLAGS: List ALL problematic clauses with legal references and implications under ${jurisdiction.name} law (or regional norms if using the general Africa lens)
 6. LOOPHOLES: Focus on early termination and insurance loopholes with specific exposure risks
-7. NEGOTIATION: Give specific advice on compensation and dispute resolution based on SA law
+7. NEGOTIATION: Give specific advice on compensation and dispute resolution consistent with ${jurisdiction.name} legal practice
 
 Return ONLY valid JSON, no markdown, no code blocks, no extra text.
 `;
@@ -365,8 +378,12 @@ app.post("/api/analyze/upload", upload.single("file"), async (req, res) => {
 
     // Analyze the extracted text
     console.log("[DEBUG] Starting contract analysis");
-    const aiAnalysis = await analyzeContract(extracted, req.body.language || "en");
-    
+    const jurisdictionMeta = getJurisdictionById(req.body?.jurisdiction);
+    const aiAnalysis = await analyzeContract(extracted, {
+      language: req.body?.language || "en",
+      jurisdiction: jurisdictionMeta.id,
+    });
+
     // Clean up uploaded file (no longer needed)
     try {
       fs.unlinkSync(req.file.path);
@@ -376,13 +393,14 @@ app.post("/api/analyze/upload", upload.single("file"), async (req, res) => {
     }
 
     // Store the analysis result
-    const id = uuidv4();
-    const record = { 
-      id, 
-      analysis: aiAnalysis, 
+    const id = randomUUID();
+    const record = {
+      id,
+      analysis: aiAnalysis,
       createdAt: new Date(),
       fileName: req.file.originalname,
-      textLength: extracted.length
+      textLength: extracted.length,
+      jurisdiction: { id: jurisdictionMeta.id, name: jurisdictionMeta.name },
     };
     
     recentAnalyses.set(id, record);
@@ -395,11 +413,12 @@ app.post("/api/analyze/upload", upload.single("file"), async (req, res) => {
 
     console.log("[DEBUG] Analysis completed successfully, ID:", id);
 
-    res.json({ 
-      success: true, 
-      id, 
+    res.json({
+      success: true,
+      id,
       analysis: aiAnalysis,
-      fileName: req.file.originalname
+      jurisdiction: { id: jurisdictionMeta.id, name: jurisdictionMeta.name },
+      fileName: req.file.originalname,
     });
 
   } catch (err) {
@@ -426,21 +445,26 @@ app.post("/api/analyze/text", async (req, res) => {
   console.log("[INFO] /analyze/text called");
   
   try {
-    const { text, language = "en" } = req.body;
-    
+    const { text, language = "en", jurisdiction: jurisdictionInput } = req.body;
+
     if (!text || !text.trim()) {
       return res.status(400).json({ error: "No text provided" });
     }
 
+    const jurisdictionMeta = getJurisdictionById(jurisdictionInput);
     console.log("[DEBUG] Analyzing text length:", text.length);
-    const aiAnalysis = await analyzeContract(text, language);
-    const id = uuidv4();
+    const aiAnalysis = await analyzeContract(text, {
+      language,
+      jurisdiction: jurisdictionMeta.id,
+    });
+    const id = randomUUID();
 
-    const record = { 
-      id, 
-      analysis: aiAnalysis, 
+    const record = {
+      id,
+      analysis: aiAnalysis,
       createdAt: new Date(),
-      source: "text" 
+      source: "text",
+      jurisdiction: { id: jurisdictionMeta.id, name: jurisdictionMeta.name },
     };
     
     recentAnalyses.set(id, record);
@@ -452,10 +476,11 @@ app.post("/api/analyze/text", async (req, res) => {
     }
 
     console.log("[DEBUG] Analysis completed successfully, ID:", id);
-    res.json({ 
-      success: true, 
-      id, 
-      analysis: aiAnalysis 
+    res.json({
+      success: true,
+      id,
+      analysis: aiAnalysis,
+      jurisdiction: { id: jurisdictionMeta.id, name: jurisdictionMeta.name },
     });
 
   } catch (err) {
@@ -489,6 +514,11 @@ app.get('/api/analyses/:id', (req, res) => {
   }
 });
 
+/* -------------------- JURISDICTIONS (African markets) -------------------- */
+app.get("/api/jurisdictions", (req, res) => {
+  res.json({ defaultJurisdiction: "ZA", jurisdictions: listForApi() });
+});
+
 /* -------------------- HEALTH CHECK -------------------- */
 app.get("/api/health", (req, res) =>
   res.json({
@@ -496,7 +526,6 @@ app.get("/api/health", (req, res) =>
     timestamp: new Date(),
     analysesCount: recentAnalyses.size,
     groq: !!process.env.GROQ_API_KEY,
-    openai: !!process.env.OPENAI_API_KEY,
   })
 );
 
@@ -514,8 +543,11 @@ app.use((err, req, res, next) => {
 });
 
 /* -------------------- START SERVER -------------------- */
-app.listen(PORT, () => {
-  console.log(`ContractShield server is running at http://localhost:${PORT}`);
+const HOST = process.env.HOST || "0.0.0.0";
+app.listen(PORT, HOST, () => {
+  console.log(
+    `ContractShield server on port ${PORT} (${HOST === "0.0.0.0" ? "reachable from phone/emulator on your LAN — use PC IP:PORT" : HOST})`
+  );
 });
 
 module.exports = app;

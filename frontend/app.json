@@ -11,11 +11,15 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "This app requires access to your camera to scan contracts."
+        "NSCameraUsageDescription": "This app requires access to your camera to scan contracts.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
       }
     },
     "android": {
-      "permissions": ["CAMERA"]
+      "permissions": ["CAMERA"],
+      "usesCleartextTraffic": true
     },
     "web": {
       "bundler": "metro",
